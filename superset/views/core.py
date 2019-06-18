@@ -2657,7 +2657,6 @@ class Superset(BaseSupersetView):
         security_manager.assert_datasource_permission(datasource)
         return json_success(json.dumps(datasource.data))
 
-    @has_access_api
     @expose('/queries/<last_updated_ms>')
     def queries(self, last_updated_ms):
         """Get the updated queries."""

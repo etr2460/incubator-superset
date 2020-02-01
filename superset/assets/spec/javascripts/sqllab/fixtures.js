@@ -219,11 +219,13 @@ export const queries = [
       columns: [
         {
           is_date: true,
+          is_dim: false,
           name: 'ds',
           type: 'STRING',
         },
         {
           is_date: false,
+          is_dim: true,
           name: 'gender',
           type: 'STRING',
         },
@@ -231,11 +233,13 @@ export const queries = [
       selected_columns: [
         {
           is_date: true,
+          is_dim: false,
           name: 'ds',
           type: 'STRING',
         },
         {
           is_date: false,
+          is_dim: true,
           name: 'gender',
           type: 'STRING',
         },
@@ -287,31 +291,37 @@ export const queryWithBadColumns = {
     selected_columns: [
       {
         is_date: true,
+        is_dim: false,
         name: 'COUNT(*)',
         type: 'STRING',
       },
       {
         is_date: false,
+        is_dim: true,
         name: 'this_col_is_ok',
         type: 'STRING',
       },
       {
         is_date: false,
+        is_dim: true,
         name: 'a',
         type: 'STRING',
       },
       {
         is_date: false,
+        is_dim: true,
         name: '1',
         type: 'STRING',
       },
       {
         is_date: false,
+        is_dim: true,
         name: '123',
         type: 'STRING',
       },
       {
         is_date: false,
+        is_dim: true,
         name: 'CASE WHEN 1=1 THEN 1 ELSE 0 END',
         type: 'STRING',
       },

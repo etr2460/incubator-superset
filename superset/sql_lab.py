@@ -19,7 +19,7 @@ import uuid
 from contextlib import closing
 from datetime import datetime
 from sys import getsizeof
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import backoff
 import msgpack
@@ -39,11 +39,10 @@ from superset import (
     results_backend_use_msgpack,
     security_manager,
 )
-from superset.dataframe import df_to_records
+from superset.dataframe import SupersetDataFrame
 from superset.db_engine_specs import BaseEngineSpec
 from superset.extensions import celery_app
 from superset.models.sql_lab import Query
-from superset.result_set import SupersetResultSet
 from superset.sql_parse import ParsedQuery
 from superset.utils.core import json_iso_dttm_ser, QueryStatus, sources, zlib_compress
 from superset.utils.dates import now_as_float
@@ -252,7 +251,7 @@ def execute_sql_statement(sql_statement, query, user_name, session, cursor, log_
 
     logger.debug(f"Query {query.id}: Fetching cursor description")
     cursor_description = cursor.description
-    return SupersetResultSet(data, cursor_description, db_engine_spec)
+    return SupersetDataFrame(data, cursor_description, db_engine_spec)
 
 
 def _serialize_payload(
@@ -266,13 +265,13 @@ def _serialize_payload(
 
 
 def _serialize_and_expand_data(
-    result_set: SupersetResultSet,
+    cdf: SupersetDataFrame,
     db_engine_spec: BaseEngineSpec,
     use_msgpack: Optional[bool] = False,
     expand_data: bool = False,
 ) -> Tuple[Union[bytes, str], list, list, list]:
-    selected_columns: List[Dict] = result_set.columns
-    expanded_columns: List[Dict]
+    selected_columns: list = cdf.columns or []
+    expanded_columns: list
 
     if use_msgpack:
         with stats_timing(
@@ -280,17 +279,14 @@ def _serialize_and_expand_data(
         ):
             data = (
                 pa.default_serialization_context()
-                .serialize(result_set.pa_table)
+                .serialize(cdf.raw_df)
                 .to_buffer()
                 .to_pybytes()
             )
-
         # expand when loading data from results backend
         all_columns, expanded_columns = (selected_columns, [])
     else:
-        df = result_set.to_pandas_df()
-        data = df_to_records(df) or []
-
+        data = cdf.data or []
         if expand_data:
             all_columns, data, expanded_columns = db_engine_spec.expand_data(
                 selected_columns, data
@@ -360,7 +356,7 @@ def execute_sql_statements(
                 query.set_extra_json_key("progress", msg)
                 session.commit()
                 try:
-                    result_set = execute_sql_statement(
+                    cdf = execute_sql_statement(
                         statement, query, user_name, session, cursor, log_params
                     )
                 except Exception as e:  # pylint: disable=broad-except
@@ -371,7 +367,7 @@ def execute_sql_statements(
                     return payload
 
     # Success, updating the query entry in database
-    query.rows = result_set.size
+    query.rows = cdf.size
     query.progress = 100
     query.set_extra_json_key("progress", None)
     if query.select_as_cta:
@@ -385,13 +381,9 @@ def execute_sql_statements(
     query.end_time = now_as_float()
 
     data, selected_columns, all_columns, expanded_columns = _serialize_and_expand_data(
-        result_set,
-        db_engine_spec,
-        store_results and results_backend_use_msgpack,
-        expand_data,
+        cdf, db_engine_spec, store_results and results_backend_use_msgpack, expand_data
     )
 
-    # TODO: data should be saved separately from metadata (likely in Parquet)
     payload.update(
         {
             "status": QueryStatus.SUCCESS,

@@ -24,7 +24,6 @@ import io
 import json
 import logging
 import os
-import pytz
 import random
 import re
 import string
@@ -47,12 +46,12 @@ from superset.models.dashboard import Dashboard
 from superset.models.datasource_access_request import DatasourceAccessRequest
 from superset.models.slice import Slice
 from superset.models.sql_lab import Query
-from superset.result_set import SupersetResultSet
 from superset.utils import core as utils
 from superset.views import core as views
 from superset.views.database.views import DatabaseView
 
 from .base_tests import SupersetTestCase
+from .fixtures.pyodbcRow import Row
 
 
 class CoreTests(SupersetTestCase):
@@ -724,24 +723,18 @@ class CoreTests(SupersetTestCase):
             os.remove(filename_2)
 
     def test_dataframe_timezone(self):
-        tz = pytz.FixedOffset(60)
+        tz = psycopg2.tz.FixedOffsetTimezone(offset=60, name=None)
         data = [
             (datetime.datetime(2017, 11, 18, 21, 53, 0, 219225, tzinfo=tz),),
-            (datetime.datetime(2017, 11, 18, 22, 6, 30, tzinfo=tz),),
+            (datetime.datetime(2017, 11, 18, 22, 6, 30, 61810, tzinfo=tz),),
         ]
-        results = SupersetResultSet(list(data), [["data"]], BaseEngineSpec)
-        df = results.to_pandas_df()
-        data = dataframe.df_to_records(df)
-        json_str = json.dumps(data, default=utils.pessimistic_json_iso_dttm_ser)
+        df = dataframe.SupersetDataFrame(list(data), [["data"]], BaseEngineSpec)
+        data = df.data
         self.assertDictEqual(
             data[0], {"data": pd.Timestamp("2017-11-18 21:53:00.219225+0100", tz=tz)}
         )
         self.assertDictEqual(
-            data[1], {"data": pd.Timestamp("2017-11-18 22:06:30+0100", tz=tz)}
-        )
-        self.assertEqual(
-            json_str,
-            '[{"data": "2017-11-18T21:53:00.219225+01:00"}, {"data": "2017-11-18T22:06:30+01:00"}]',
+            data[1], {"data": pd.Timestamp("2017-11-18 22:06:30.061810+0100", tz=tz)}
         )
 
     def test_mssql_engine_spec_pymssql(self):
@@ -750,11 +743,26 @@ class CoreTests(SupersetTestCase):
             (1, 1, datetime.datetime(2017, 10, 19, 23, 39, 16, 660000)),
             (2, 2, datetime.datetime(2018, 10, 19, 23, 39, 16, 660000)),
         ]
-        results = SupersetResultSet(
+        df = dataframe.SupersetDataFrame(
             list(data), [["col1"], ["col2"], ["col3"]], MssqlEngineSpec
         )
-        df = results.to_pandas_df()
-        data = dataframe.df_to_records(df)
+        data = df.data
+        self.assertEqual(len(data), 2)
+        self.assertEqual(
+            data[0],
+            {"col1": 1, "col2": 1, "col3": pd.Timestamp("2017-10-19 23:39:16.660000")},
+        )
+
+    def test_mssql_engine_spec_odbc(self):
+        # Test for case when pyodbc.Row is returned (msodbc driver)
+        data = [
+            Row((1, 1, datetime.datetime(2017, 10, 19, 23, 39, 16, 660000))),
+            Row((2, 2, datetime.datetime(2018, 10, 19, 23, 39, 16, 660000))),
+        ]
+        df = dataframe.SupersetDataFrame(
+            list(data), [["col1"], ["col2"], ["col3"]], MssqlEngineSpec
+        )
+        data = df.data
         self.assertEqual(len(data), 2)
         self.assertEqual(
             data[0],
@@ -889,14 +897,14 @@ class CoreTests(SupersetTestCase):
             ("d", "datetime"),
         )
         db_engine_spec = BaseEngineSpec()
-        results = SupersetResultSet(data, cursor_descr, db_engine_spec)
+        cdf = dataframe.SupersetDataFrame(data, cursor_descr, db_engine_spec)
         query = {
             "database_id": 1,
             "sql": "SELECT * FROM birth_names LIMIT 100",
             "status": utils.QueryStatus.PENDING,
         }
         serialized_data, selected_columns, all_columns, expanded_columns = sql_lab._serialize_and_expand_data(
-            results, db_engine_spec, use_new_deserialization
+            cdf, db_engine_spec, use_new_deserialization
         )
         payload = {
             "query_id": 1,
@@ -932,14 +940,14 @@ class CoreTests(SupersetTestCase):
             ("d", "datetime"),
         )
         db_engine_spec = BaseEngineSpec()
-        results = SupersetResultSet(data, cursor_descr, db_engine_spec)
+        cdf = dataframe.SupersetDataFrame(data, cursor_descr, db_engine_spec)
         query = {
             "database_id": 1,
             "sql": "SELECT * FROM birth_names LIMIT 100",
             "status": utils.QueryStatus.PENDING,
         }
         serialized_data, selected_columns, all_columns, expanded_columns = sql_lab._serialize_and_expand_data(
-            results, db_engine_spec, use_new_deserialization
+            cdf, db_engine_spec, use_new_deserialization
         )
         payload = {
             "query_id": 1,
@@ -966,8 +974,7 @@ class CoreTests(SupersetTestCase):
             deserialized_payload = views._deserialize_results_payload(
                 serialized_payload, query_mock, use_new_deserialization
             )
-            df = results.to_pandas_df()
-            payload["data"] = dataframe.df_to_records(df)
+            payload["data"] = dataframe.SupersetDataFrame.format_data(cdf.raw_df)
 
             self.assertDictEqual(deserialized_payload, payload)
             expand_data.assert_called_once()

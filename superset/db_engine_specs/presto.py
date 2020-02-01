@@ -46,6 +46,21 @@ if TYPE_CHECKING:
 QueryStatus = utils.QueryStatus
 config = app.config
 
+# map between Presto types and Pandas
+pandas_dtype_map = {
+    "boolean": "object",  # to support nullable bool
+    "tinyint": "Int64",  # note: capital "I" means nullable int
+    "smallint": "Int64",
+    "integer": "Int64",
+    "bigint": "Int64",
+    "real": "float64",
+    "double": "float64",
+    "varchar": "object",
+    "timestamp": "datetime64[ns]",
+    "date": "datetime64[ns]",
+    "varbinary": "object",
+}
+
 
 def get_children(column: Dict[str, str]) -> List[Dict[str, str]]:
     """

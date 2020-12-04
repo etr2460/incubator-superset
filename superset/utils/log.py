@@ -224,6 +224,9 @@ class DBEventLogger(AbstractEventLogger):
         logs = list()
         for record in records:
             json_string: Optional[str]
+            record.update(
+                {"path": path, "path_no_int": path_no_int, "ref": ref,}
+            )
             try:
                 json_string = json.dumps(record)
             except Exception:  # pylint: disable=broad-except
@@ -236,9 +239,6 @@ class DBEventLogger(AbstractEventLogger):
                 duration_ms=duration_ms,
                 referrer=referrer,
                 user_id=user_id,
-                path=path,
-                path_no_int=path_no_int,
-                ref=ref,
             )
             logs.append(log)
         try:

@@ -31,7 +31,6 @@ module.exports = {
         loose: true,
         modules: false,
         shippedProposals: true,
-        targets: packageConfig.browserslist,
       },
     ],
     [
